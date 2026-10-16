@@ -21,6 +21,29 @@ const GAP: f32 = 14.0;
 const MARGIN: f32 = 28.0;
 /// Horizontal gutter that keeps pages clear of the floating quick-action bar.
 const SIDE: f32 = 70.0;
+
+/// Full-screen reading: pages run edge to edge, with no side gutters, gaps or shadow.
+static BORDERLESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn set_borderless(on: bool) {
+    BORDERLESS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn borderless() -> bool {
+    BORDERLESS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn gap() -> f32 {
+    if borderless() { 0.0 } else { GAP }
+}
+
+fn margin() -> f32 {
+    if borderless() { 0.0 } else { MARGIN }
+}
+
+fn side() -> f32 {
+    if borderless() { 0.0 } else { SIDE }
+}
 const THUMB_TAG: u64 = 1 << 63;
 const TEXT_TAG: u64 = 1 << 62;
 /// A page rendered for the organize grid at the size it is drawn there.
@@ -1187,7 +1210,7 @@ impl DocView {
         let point = |x: Option<f32>, y: Option<f32>| p.dest_fraction(x, y, self.rotation);
         // The window's top-left as far as pages go: its left edge is the gutter that keeps them
         // clear of the floating quick-action bar, so `left` 0 shows the page's edge beside it.
-        let corner = vec2(SIDE, 0.0);
+        let corner = vec2(side(), 0.0);
         let (fx, fy, rel) = match dest {
             DestView::Top => return,
             DestView::Xyz { left, top, zoom } => {
@@ -1445,7 +1468,7 @@ impl DocView {
         let k = (self.viewport_screen.width() - 2.0 * PAD).max(50.0) / w.max(1.0);
         self.zoom = (self.zoom * k).clamp(0.08, 64.0);
         self.fit = Fit::None;
-        self.zoom_anchor = Some((page, content[0].clamp(0.0, 1.0), content[1].clamp(0.0, 1.0), vec2(PAD, MARGIN)));
+        self.zoom_anchor = Some((page, content[0].clamp(0.0, 1.0), content[1].clamp(0.0, 1.0), vec2(PAD, margin())));
         true
     }
 
@@ -1886,16 +1909,16 @@ impl DocView {
         } else {
             (max_w, largest(|s| s.1))
         };
-        let avail_w = (self.viewport_w - 2.0 * SIDE).max(100.0);
+        let avail_w = (self.viewport_w - 2.0 * side()).max(100.0);
         let per_row = if self.layout == PageLayout::TwoUp { 2.0 } else { 1.0 };
         match self.fit {
-            Fit::Width => self.zoom = (avail_w - GAP * (per_row - 1.0)) / (w * PT * per_row),
+            Fit::Width => self.zoom = (avail_w - gap() * (per_row - 1.0)) / (w * PT * per_row),
             Fit::Page => {
-                let zw = (avail_w - GAP * (per_row - 1.0)) / (w * PT * per_row);
-                let zh = (self.viewport_h - 2.0 * MARGIN) / (h * PT);
+                let zw = (avail_w - gap() * (per_row - 1.0)) / (w * PT * per_row);
+                let zh = (self.viewport_h - 2.0 * margin()) / (h * PT);
                 self.zoom = zw.min(zh);
             }
-            Fit::Height => self.zoom = (self.viewport_h - 2.0 * MARGIN) / (h * PT),
+            Fit::Height => self.zoom = (self.viewport_h - 2.0 * margin()) / (h * PT),
             Fit::None => {}
         }
         self.zoom = self.zoom.clamp(0.08, 64.0);
@@ -1908,21 +1931,21 @@ impl DocView {
         let shown = info.pages.iter().enumerate().filter(|&(i, _)| single.is_none_or(|c| c == i));
         let max_w = shown.map(|(_, p)| self.display_size(p).0).fold(0.0, f32::max);
         let per_row = if self.layout == PageLayout::TwoUp { 2.0 } else { 1.0 };
-        (max_w * self.zoom * PT * per_row + 2.0 * SIDE).max(avail_w)
+        (max_w * self.zoom * PT * per_row + 2.0 * side()).max(avail_w)
     }
 
     /// Page rects in content coordinates (origin at the scroll content's top-left).
     fn layout(&self, info: &DocInfo, content_w: f32) -> Vec<Rect> {
         let s = self.zoom * PT;
         let mut rects = Vec::with_capacity(info.pages.len());
-        let mut y = MARGIN;
+        let mut y = margin();
         match self.layout {
             PageLayout::Single => {
                 for p in &info.pages {
                     let (w, h) = self.display_size(p);
                     let size = vec2(w * s, h * s);
-                    rects.push(Rect::from_min_size(pos2(((content_w - size.x) / 2.0).max(SIDE), y), size));
-                    y += size.y + GAP;
+                    rects.push(Rect::from_min_size(pos2(((content_w - size.x) / 2.0).max(side()), y), size));
+                    y += size.y + gap();
                 }
             }
             PageLayout::TwoUp => {
@@ -1934,14 +1957,14 @@ impl DocView {
                 };
                 for (ri, pair) in rows.into_iter().enumerate() {
                     let sizes: Vec<Vec2> = pair.iter().map(|p| self.display_size(p)).map(|(w, h)| vec2(w * s, h * s)).collect();
-                    let row_w: f32 = sizes.iter().map(|v| v.x).sum::<f32>() + GAP * (sizes.len() as f32 - 1.0);
+                    let row_w: f32 = sizes.iter().map(|v| v.x).sum::<f32>() + gap() * (sizes.len() as f32 - 1.0);
                     let row_h = sizes.iter().map(|v| v.y).fold(0.0, f32::max);
-                    let mut x = if self.cover && ri == 0 { (content_w / 2.0 + GAP / 2.0).max(SIDE) } else { ((content_w - row_w) / 2.0).max(SIDE) };
+                    let mut x = if self.cover && ri == 0 { (content_w / 2.0 + gap() / 2.0).max(side()) } else { ((content_w - row_w) / 2.0).max(side()) };
                     for size in sizes {
                         rects.push(Rect::from_min_size(pos2(x, y + (row_h - size.y) / 2.0), size));
-                        x += size.x + GAP;
+                        x += size.x + gap();
                     }
-                    y += row_h + GAP;
+                    y += row_h + gap();
                 }
             }
         }
@@ -2365,7 +2388,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         if let Some((page, fy, rel_y)) = anchor {
             view.zoom_anchor = Some((page, 0.5, fy, vec2(avail.width() / 2.0, rel_y)));
         } else {
-            view.zoom_anchor = Some((view.current, 0.5, 0.0, vec2(avail.width() / 2.0, MARGIN)));
+            view.zoom_anchor = Some((view.current, 0.5, 0.0, vec2(avail.width() / 2.0, margin())));
         }
     }
 
@@ -2432,7 +2455,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         // The row's bounding box on screen (one page, or a two-page spread).
         let row_rect = row.iter().filter_map(|&i| rects.get(i)).copied().reduce(Rect::union);
         // Within a point, so layout rounding can't stop a fitting page from turning.
-        let fits = row_rect.is_some_and(|r| r.height() + 2.0 * MARGIN <= avail.height() + 1.0);
+        let fits = row_rect.is_some_and(|r| r.height() + 2.0 * margin() <= avail.height() + 1.0);
         let can_turn = !middle_gesture && unobstructed && ui.rect_contains_pointer(avail);
         single_paging = can_turn && fits;
         // Every wheel event goes to the pager, so it follows each trackpad touch to its end
@@ -2522,11 +2545,11 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     }
     let visible_pages: Vec<usize> = if view.continuous { (0..rects.len()).collect() } else { row.clone() };
     let (y_shift, content_h) = if view.continuous {
-        (0.0, rects.iter().map(|r| r.bottom()).reduce(f32::max).map(|bottom| bottom + MARGIN).unwrap_or(0.0))
+        (0.0, rects.iter().map(|r| r.bottom()).reduce(f32::max).map(|bottom| bottom + margin()).unwrap_or(0.0))
     } else {
         // Only the current row scrolls into view; the content is its bounding box plus margins.
         match row.iter().filter_map(|&i| rects.get(i)).copied().reduce(Rect::union) {
-            Some(r) => (r.top() - MARGIN, r.height() + 2.0 * MARGIN),
+            Some(r) => (r.top() - margin(), r.height() + 2.0 * margin()),
             None => (0.0, 0.0),
         }
     };
@@ -2565,7 +2588,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     } else if let Some((page, frac)) = view.goto.take() {
         let page = page.min(rects.len() - 1);
         let r = rects[page];
-        scroll = scroll.vertical_scroll_offset((r.top() - y_shift - GAP + frac * r.height()).max(0.0));
+        scroll = scroll.vertical_scroll_offset((r.top() - y_shift - gap() + frac * r.height()).max(0.0));
     }
     let ppp = ui.ctx().pixels_per_point();
     let scale = view.render_scale(ppp);
@@ -2762,7 +2785,9 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
             }
             let xf = PageXform { rect: r, rot: view.rotation, pw: info.pages[i].width.max(1.0), ph: info.pages[i].height.max(1.0) };
             // Soft shadow + paper.
-            painter.add(egui::epaint::Shadow { offset: [0, 3], blur: 14, spread: 0, color: t.page_shadow }.as_shape(r, CornerRadius::ZERO));
+            if !borderless() {
+                painter.add(egui::epaint::Shadow { offset: [0, 3], blur: 14, spread: 0, color: t.page_shadow }.as_shape(r, CornerRadius::ZERO));
+            }
             painter.rect_filled(r, CornerRadius::ZERO, Color32::WHITE);
             if let Some(err) = view.errors.get(&i) {
                 painter.rect_filled(r, CornerRadius::ZERO, Color32::from_rgb(0xFB, 0xF4, 0xF4));
@@ -3580,7 +3605,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         // below the window's top). Within a point, as for wheel paging, so layout rounding
         // can't hide an edge.
         let max_y = (out.content_size.y - out.inner_rect.height()).max(0.0);
-        (page, out.state.offset.y <= MARGIN - GAP + 1.0, out.state.offset.y >= max_y - 1.0)
+        (page, out.state.offset.y <= margin() - gap() + 1.0, out.state.offset.y >= max_y - 1.0)
     });
 
     view.viewport_screen = out.inner_rect;

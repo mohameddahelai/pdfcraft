@@ -752,7 +752,12 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                 }
             });
             if let Some(id) = page_display {
-                app.execute(id);
+                // The comfort filter is a display setting of the app, not a catalogue command.
+                if id == "view.comfort" {
+                    app.cycle_comfort();
+                } else {
+                    app.execute(id);
+                }
             }
         });
 }
@@ -808,7 +813,7 @@ fn rail_view_menu(ui: &mut egui::Ui, view: &mut DocView) -> Option<&'static str>
     ui.separator();
     picked = page_display_menu(ui, view).or(picked);
     ui.separator();
-    for (id, label) in [("view.read_mode", "Read mode"), ("view.full_screen", "Full screen mode")] {
+    for (id, label) in [("view.read_mode", "Read mode"), ("view.full_screen", "Full screen mode"), ("view.comfort", "Comfort view (warm light)")] {
         if ui.button(tl!(label)).clicked() {
             picked = Some(id);
         }

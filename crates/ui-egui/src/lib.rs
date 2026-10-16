@@ -601,6 +601,11 @@ pub struct PdfCraftApp {
     pub password_prompt: Option<PasswordPrompt>,
     pub unlock_prompt: Option<UnlockPrompt>,
     pub full_screen: bool,
+    /// Each document's page display before full screen, put back when full screen ends.
+    pre_full_screen: Vec<(DocId, canvas::Fit, canvas::PageLayout, bool)>,
+    /// Comfort view: the strength of the warm, low-blue-light filter over the whole window
+    /// (0 off, 1 to 3 gentle to strong).
+    pub comfort_level: u8,
     /// Files delivered asynchronously (web drag-and-drop, web file picker).
     pub inbox: Inbox,
     /// The browser's startup `?file=` download. Unlike a deliberate Open or drop, a late
@@ -953,6 +958,8 @@ impl PdfCraftApp {
             password_prompt: None,
             unlock_prompt: None,
             full_screen: false,
+            pre_full_screen: Vec::new(),
+            comfort_level: 0,
             inbox: Default::default(),
             startup_inbox: Default::default(),
             startup_superseded: false,
@@ -1313,7 +1320,7 @@ impl PdfCraftApp {
         self.password_prompt = None;
         // The reading-colours preference is app-wide: a newly opened document starts with it.
         // Idempotent: the engine returns `false` when the document has the setting already.
-        self.session.set_reading_colors(id, self.reading_colors);
+        self.session.set_reading_colors(id, self.effective_reading_colors());
         let doc = self.session.get(id).ok_or("the document could not be opened")?;
         let pages = doc.info.pages.len();
         // Acrobat opens straight to the Comments panel when a document has comments.
@@ -1565,7 +1572,52 @@ impl PdfCraftApp {
     /// Enter or leave full-screen reading (Acrobat: View ▸ Full Screen Mode, ⌘L).
     pub fn set_full_screen(&mut self, ctx: &egui::Context, on: bool) {
         self.full_screen = on;
+        // Like holding the paper: pages run edge to edge, one page across, scrolling down.
+        canvas::set_borderless(on);
+        if on {
+            self.pre_full_screen.clear();
+            for view in &mut self.views {
+                self.pre_full_screen.push((view.id, view.fit, view.layout, view.continuous));
+                view.set_display(canvas::PageLayout::Single, true);
+                view.set_fit(canvas::Fit::Width);
+            }
+        } else {
+            for (id, fit, layout, continuous) in std::mem::take(&mut self.pre_full_screen) {
+                if let Some(view) = self.views.iter_mut().find(|v| v.id == id) {
+                    view.set_display(layout, continuous);
+                    view.set_fit(fit);
+                }
+            }
+        }
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
+    }
+
+    /// Step the comfort view: off, then gentle, medium and strong warm filters.
+    pub fn cycle_comfort(&mut self) {
+        self.comfort_level = (self.comfort_level + 1) % 4;
+        if let Some(ctx) = &self.ctx {
+            ctx.request_repaint();
+        }
+    }
+
+    /// The colours pages are read in: the Reading colours preference when it is on, otherwise
+    /// white text on black while the dark theme is on.
+    fn effective_reading_colors(&self) -> pdfcraft_render::ReadingColors {
+        if self.reading_colors.params.is_none() && self.theme == ThemeKind::Dark {
+            pdfcraft_render::ReadingColors::WHITE_ON_BLACK
+        } else {
+            self.reading_colors
+        }
+    }
+
+    /// Push the effective reading colours to every open document (the theme changed).
+    fn apply_reading_colors(&mut self) {
+        let colors = self.effective_reading_colors();
+        for i in 0..self.views.len() {
+            if self.session.set_reading_colors(self.views[i].id, colors) {
+                self.views[i].invalidate_content();
+            }
+        }
     }
 
     /// Answer the Full Screen mode prompt a document raised on opening: enter it, or leave the
@@ -2010,12 +2062,8 @@ impl PdfCraftApp {
     /// Colors). A document the change actually touches re-renders.
     pub fn set_reading_colors(&mut self, colors: pdfcraft_render::ReadingColors) {
         self.reading_colors = colors;
-        for i in 0..self.views.len() {
-            // Idempotent per document: the engine says whether anything changed.
-            if self.session.set_reading_colors(self.views[i].id, colors) {
-                self.views[i].invalidate_content();
-            }
-        }
+        // Idempotent per document: the engine says whether anything changed.
+        self.apply_reading_colors();
     }
 
     /// Enable the Linux desktop portal in a native window. Headless contexts keep
@@ -2053,6 +2101,8 @@ impl PdfCraftApp {
         if kind != self.theme {
             self.theme = kind;
             theme::apply(ctx, kind);
+            // The dark theme also turns the pages white-on-black.
+            self.apply_reading_colors();
         }
     }
 
@@ -2277,6 +2327,7 @@ impl PdfCraftApp {
         });
         // Set apart: one more key inside the macro above passes serde_json's recursion limit.
         v["redact_prefs"] = self.redact_defaults.to_json();
+        v["comfort_level"] = serde_json::Value::from(self.comfort_level);
         // Set outside json! above, which is at serde_json's macro recursion limit.
         v["hide_empty_highlight_hover"] = serde_json::Value::Bool(self.comment_prefs.hide_empty_highlight_hover);
         v.to_string()
@@ -2320,6 +2371,9 @@ impl PdfCraftApp {
         self.pinned.restore(&v["pinned_folders"]);
         if let Ok(preference) = serde_json::from_value::<ThemePreference>(v["theme"].clone()) {
             self.set_theme_preference(preference);
+        }
+        if let Some(level) = v["comfort_level"].as_u64() {
+            self.comfort_level = level.min(3) as u8;
         }
         if let Ok(speed) = serde_json::from_value::<scroll_speed::ScrollSpeed>(v["scroll_speed"].clone()) {
             self.scroll_speed = speed;
@@ -3180,5 +3234,19 @@ impl PdfCraftApp {
                 view.finish_render_frame(ctx, &doc.info, &doc.renderer);
             }
         }
+        self.draw_comfort_filter(ctx);
+    }
+
+    /// Comfort view: a warm amber tint over the whole window, which cuts the blue light the way
+    /// a phone's night mode does. It sits above everything, so it covers full screen too.
+    fn draw_comfort_filter(&self, ctx: &egui::Context) {
+        let alpha = match self.comfort_level {
+            0 => return,
+            1 => 36,
+            2 => 62,
+            _ => 90,
+        };
+        let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("comfort-filter"));
+        ctx.layer_painter(layer).rect_filled(ctx.content_rect(), egui::CornerRadius::ZERO, egui::Color32::from_rgba_unmultiplied(255, 140, 30, alpha));
     }
 }
