@@ -3893,7 +3893,8 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     if copy_selected {
         app.execute("edit.copy");
     }
-    quick_bar(app, avail, ui);
+    // The floating quick-action bar is no longer drawn; its tools stay reachable from the
+    // menus, the command palette and their keyboard shortcuts.
     if let Some((source, file, destination)) = remote_open {
         app.open_remote_link(source, file, destination);
     }
@@ -4423,7 +4424,9 @@ fn notice_bar(ui: &mut egui::Ui, t: &Tokens, icon: &str, icon_color: Color32, te
     });
 }
 
-/// The floating quick-action bar at the left edge of the document area.
+/// The floating quick-action bar at the left edge of the document area. Not drawn at present
+/// (see the end of the document view); kept so it can be switched back on.
+#[allow(dead_code)]
 fn quick_bar(app: &mut PdfCraftApp, area: Rect, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let pos = area.left_top() + vec2(14.0, 14.0);
