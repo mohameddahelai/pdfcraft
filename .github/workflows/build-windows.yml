@@ -6,16 +6,31 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
+
+      # The project's own fonts, which its official release embeds (same pinned commit).
+      - name: Check out craft-fonts
+        uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3
+          path: craft-fonts
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
 
+      # Built the way the official release builds it: locked dependencies, fonts embedded.
       - name: Build release
-        run: cargo build --release -p pdfcraft
         shell: pwsh
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: cargo build --release --locked -p pdfcraft
 
       - name: Collect files
         shell: pwsh
