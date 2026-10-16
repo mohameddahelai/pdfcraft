@@ -664,17 +664,32 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     app.choose_right_panel(if selected { None } else { Some(panel) });
                 }
             };
-            rail_button(ui, RightPanel::Comments, "message-square-text", "Comments", has_comments);
-            rail_button(ui, RightPanel::Bookmarks, "bookmark", "Bookmarks", has_outline);
-            rail_button(ui, RightPanel::Pages, "files", "Page thumbnails", false);
-            rail_button(ui, RightPanel::Fields, "text-cursor-input", "Form fields", has_fields);
-            rail_button(ui, RightPanel::Layers, "layers", "Layers", has_layers);
-            rail_button(ui, RightPanel::Attachments, "paperclip", "Attachments", has_files);
-            rail_button(ui, RightPanel::Signatures, "signature", "Signatures", has_signatures);
-            if has_check {
-                rail_button(ui, RightPanel::Accessibility, "accessibility", "Accessibility Checker", false);
-            }
-            rail_button(ui, RightPanel::Tags, "tag", "Tags", false);
+            // The page controls at the bottom need room of their own. In a short window the
+            // least useful of them are left out, and the panel buttons above scroll in what is
+            // left, so icons never pile up on one another.
+            let total = ui.available_height();
+            let top_full = 9.0 * 38.0;
+            let (compact, tiny, bottom_need) = if total >= top_full + 410.0 {
+                (false, false, 410.0)
+            } else if total >= top_full + 300.0 {
+                (true, false, 300.0)
+            } else {
+                (true, true, 222.0)
+            };
+            egui::ScrollArea::vertical().id_salt("rail-top").max_height((total - bottom_need).max(0.0)).auto_shrink([false, true]).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                rail_button(ui, RightPanel::Comments, "message-square-text", "Comments", has_comments);
+                rail_button(ui, RightPanel::Bookmarks, "bookmark", "Bookmarks", has_outline);
+                rail_button(ui, RightPanel::Pages, "files", "Page thumbnails", false);
+                rail_button(ui, RightPanel::Fields, "text-cursor-input", "Form fields", has_fields);
+                rail_button(ui, RightPanel::Layers, "layers", "Layers", has_layers);
+                rail_button(ui, RightPanel::Attachments, "paperclip", "Attachments", has_files);
+                rail_button(ui, RightPanel::Signatures, "signature", "Signatures", has_signatures);
+                if has_check {
+                    rail_button(ui, RightPanel::Accessibility, "accessibility", "Accessibility Checker", false);
+                }
+                rail_button(ui, RightPanel::Tags, "tag", "Tags", false);
+            });
 
             // Page navigation cluster at the bottom (as in Acrobat's rail).
             let view = &mut app.views[index];
@@ -708,28 +723,34 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     view.fit = if view.fit == Fit::Width { Fit::Page } else { Fit::Width };
                     view.goto = Some((view.current, 0.0));
                 }
-                let zoom = format!("{:.0}%", view.zoom * 100.0);
-                ui.allocate_ui_with_layout(vec2(40.0, 16.0), Layout::top_down(Align::Center), |ui| {
-                    ui.label(egui::RichText::new(zoom).font(theme::medium(11.0)).color(t.text_muted));
-                });
-                ui.add_space(6.0);
-                if icons::button(ui, "chevron-down", 30.0, false, tl!("Next page")).clicked() {
-                    view.step_page(true);
+                if !compact {
+                    let zoom = format!("{:.0}%", view.zoom * 100.0);
+                    ui.allocate_ui_with_layout(vec2(40.0, 16.0), Layout::top_down(Align::Center), |ui| {
+                        ui.label(egui::RichText::new(zoom).font(theme::medium(11.0)).color(t.text_muted));
+                    });
+                    ui.add_space(6.0);
                 }
-                if icons::button(ui, "chevron-up", 30.0, false, tl!("Previous page")).clicked() {
-                    view.step_page(false);
-                }
-                // History is distinct from stepping to the adjacent page, and belongs to this tab.
-                for (forward, icon, label, shortcut, enabled) in [
-                    (true, "chevron-right", tl!("Next view"), crate::commands::NEXT_VIEW, !view.forward.is_empty()),
-                    (false, "chevron-left", tl!("Previous view"), crate::commands::PREV_VIEW, !view.back.is_empty()),
-                ] {
-                    let tip = format!("{label} ({})", crate::commands::shortcut_label(ui.ctx(), shortcut));
-                    if ui.add_enabled_ui(enabled, |ui| icons::button(ui, icon, 30.0, false, &tip)).inner.clicked() {
-                        view.view_history(forward);
+                if !tiny {
+                    if icons::button(ui, "chevron-down", 30.0, false, tl!("Next page")).clicked() {
+                        view.step_page(true);
+                    }
+                    if icons::button(ui, "chevron-up", 30.0, false, tl!("Previous page")).clicked() {
+                        view.step_page(false);
                     }
                 }
-                ui.label(egui::RichText::new(page_count.to_string()).font(theme::regular(11.0)).color(t.text_muted));
+                // History is distinct from stepping to the adjacent page, and belongs to this tab.
+                if !compact {
+                    for (forward, icon, label, shortcut, enabled) in [
+                        (true, "chevron-right", tl!("Next view"), crate::commands::NEXT_VIEW, !view.forward.is_empty()),
+                        (false, "chevron-left", tl!("Previous view"), crate::commands::PREV_VIEW, !view.back.is_empty()),
+                    ] {
+                        let tip = format!("{label} ({})", crate::commands::shortcut_label(ui.ctx(), shortcut));
+                        if ui.add_enabled_ui(enabled, |ui| icons::button(ui, icon, 30.0, false, &tip)).inner.clicked() {
+                            view.view_history(forward);
+                        }
+                    }
+                    ui.label(egui::RichText::new(page_count.to_string()).font(theme::regular(11.0)).color(t.text_muted));
+                }
                 let page_input_id = view.page_input_id();
                 // Consume replacement selection once, including when the editor has lost focus.
                 let reselect = std::mem::take(&mut view.page_input_reselect);

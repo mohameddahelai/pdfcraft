@@ -1495,13 +1495,14 @@ impl DocView {
     /// [x0, y0, x1, y1], i.e. after view rotation) spans the window's width, its left edge at
     /// the window's left and its top at the top.
     pub fn fit_content(&mut self, page: usize, content: [f32; 4]) -> bool {
-        const PAD: f32 = 16.0;
+        // Holding it as a paper leaves only a hair of margin, so the text nearly touches the edges.
+        let pad: f32 = if borderless() { 4.0 } else { 16.0 };
         let Some((_, pr)) = self.screen_rects.iter().find(|(p, _)| *p == page).copied() else { return false };
         let w = (content[2] - content[0]).max(0.01) * pr.width();
-        let k = (self.viewport_screen.width() - 2.0 * PAD).max(50.0) / w.max(1.0);
+        let k = (self.viewport_screen.width() - 2.0 * pad).max(50.0) / w.max(1.0);
         self.zoom = (self.zoom * k).clamp(0.08, 64.0);
         self.fit = Fit::None;
-        self.zoom_anchor = Some((page, content[0].clamp(0.0, 1.0), content[1].clamp(0.0, 1.0), vec2(PAD, margin())));
+        self.zoom_anchor = Some((page, content[0].clamp(0.0, 1.0), content[1].clamp(0.0, 1.0), vec2(pad, margin())));
         true
     }
 
@@ -1557,13 +1558,12 @@ impl DocView {
         }
     }
 
-    /// Standard zoom steps (as in Acrobat's zoom menu).
+    /// One small zoom step: 1 % (a percentage point) per press of + or −, for fine control.
     pub fn zoom_step(&mut self, up: bool) {
-        const STEPS: [f32; 17] = [0.1, 0.25, 0.33, 0.5, 0.66, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 32.0];
         let z = self.zoom;
-        let next = if up { STEPS.iter().copied().find(|s| *s > z * 1.01) } else { STEPS.iter().rev().copied().find(|s| *s < z * 0.99) };
-        if let Some(n) = next {
-            self.set_zoom(n);
+        let next = if up { z + 0.01 } else { z - 0.01 };
+        if next.is_finite() && next > 0.0 {
+            self.set_zoom(next);
         }
     }
 
@@ -1951,9 +1951,7 @@ impl DocView {
             Fit::Page => {
                 let zw = (avail_w - gap() * (per_row - 1.0)) / (w * PT * per_row);
                 let zh = (self.viewport_h - 2.0 * margin()) / (h * PT);
-                // Hold as a paper: zoom until the page covers the whole screen (the sides or the
-                // bottom spill off, never leaving a gap); otherwise the whole page fits.
-                self.zoom = if borderless() { zw.max(zh) } else { zw.min(zh) };
+                self.zoom = zw.min(zh);
             }
             Fit::Height => self.zoom = (self.viewport_h - 2.0 * margin()) / (h * PT),
             Fit::None => {}
@@ -1964,10 +1962,6 @@ impl DocView {
     /// Width of the scroll content. Single-page view sizes it to the page it shows, so a
     /// wider page elsewhere in the document can't push the shown one off-centre.
     fn content_width(&self, info: &DocInfo, avail_w: f32) -> f32 {
-        // A page that covers the screen is centred and cropped, so there is nothing to scroll sideways.
-        if borderless() {
-            return avail_w;
-        }
         let single = (self.layout == PageLayout::Single && !self.continuous).then(|| self.current.min(info.pages.len().saturating_sub(1)));
         let shown = info.pages.iter().enumerate().filter(|&(i, _)| single.is_none_or(|c| c == i));
         let max_w = shown.map(|(_, p)| self.display_size(p).0).fold(0.0, f32::max);
@@ -1985,10 +1979,7 @@ impl DocView {
                 for p in &info.pages {
                     let (w, h) = self.display_size(p);
                     let size = vec2(w * s, h * s);
-                    let x = (content_w - size.x) / 2.0;
-                    // Edge to edge, a page wider than the screen is centred and cropped.
-                    let x = if borderless() { x } else { x.max(side()) };
-                    rects.push(Rect::from_min_size(pos2(x, y), size));
+                    rects.push(Rect::from_min_size(pos2(((content_w - size.x) / 2.0).max(side()), y), size));
                     y += size.y + gap();
                 }
             }
