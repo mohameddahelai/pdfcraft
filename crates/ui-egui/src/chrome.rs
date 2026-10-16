@@ -663,9 +663,11 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
             rail_button(ui, RightPanel::Tags, "tag", "Tags", false);
 
             // Page navigation cluster at the bottom (as in Acrobat's rail).
+            let dark_on = app.dark_pages_on;
             let view = &mut app.views[index];
             let mut page_display = None;
             let mut hold_as_paper = false;
+            let mut toggle_dark = false;
             ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 let tip = crate::commands::key_tip(ui.ctx(), tl!("Zoom out ({key})"), crate::commands::ZOOM_OUT);
@@ -698,6 +700,10 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                 // One whole page at a time, filling the screen, nothing else (Esc to leave).
                 if icons::button(ui, "file-text", 32.0, false, tl!("Hold as a paper")).clicked() {
                     hold_as_paper = true;
+                }
+                // Dark pages: white paper turns black, black text white (highlighted while on).
+                if icons::button(ui, "moon", 32.0, dark_on, tl!("Dark pages")).clicked() {
+                    toggle_dark = true;
                 }
                 let zoom = format!("{:.0}%", view.zoom * 100.0);
                 ui.allocate_ui_with_layout(vec2(40.0, 16.0), Layout::top_down(Align::Center), |ui| {
@@ -758,6 +764,9 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
             });
             if hold_as_paper {
                 app.execute("view.full_screen");
+            }
+            if toggle_dark {
+                app.toggle_dark_pages();
             }
             if let Some(id) = page_display {
                 // The comfort filter is a display setting of the app, not a catalogue command.

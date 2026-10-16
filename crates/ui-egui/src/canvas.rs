@@ -1951,7 +1951,9 @@ impl DocView {
             Fit::Page => {
                 let zw = (avail_w - gap() * (per_row - 1.0)) / (w * PT * per_row);
                 let zh = (self.viewport_h - 2.0 * margin()) / (h * PT);
-                self.zoom = zw.min(zh);
+                // Hold as a paper: zoom until the page covers the whole screen (the sides or the
+                // bottom spill off, never leaving a gap); otherwise the whole page fits.
+                self.zoom = if borderless() { zw.max(zh) } else { zw.min(zh) };
             }
             Fit::Height => self.zoom = (self.viewport_h - 2.0 * margin()) / (h * PT),
             Fit::None => {}
@@ -1962,6 +1964,10 @@ impl DocView {
     /// Width of the scroll content. Single-page view sizes it to the page it shows, so a
     /// wider page elsewhere in the document can't push the shown one off-centre.
     fn content_width(&self, info: &DocInfo, avail_w: f32) -> f32 {
+        // A page that covers the screen is centred and cropped, so there is nothing to scroll sideways.
+        if borderless() {
+            return avail_w;
+        }
         let single = (self.layout == PageLayout::Single && !self.continuous).then(|| self.current.min(info.pages.len().saturating_sub(1)));
         let shown = info.pages.iter().enumerate().filter(|&(i, _)| single.is_none_or(|c| c == i));
         let max_w = shown.map(|(_, p)| self.display_size(p).0).fold(0.0, f32::max);
@@ -1979,7 +1985,10 @@ impl DocView {
                 for p in &info.pages {
                     let (w, h) = self.display_size(p);
                     let size = vec2(w * s, h * s);
-                    rects.push(Rect::from_min_size(pos2(((content_w - size.x) / 2.0).max(side()), y), size));
+                    let x = (content_w - size.x) / 2.0;
+                    // Edge to edge, a page wider than the screen is centred and cropped.
+                    let x = if borderless() { x } else { x.max(side()) };
+                    rects.push(Rect::from_min_size(pos2(x, y), size));
                     y += size.y + gap();
                 }
             }

@@ -606,6 +606,9 @@ pub struct PdfCraftApp {
     /// Comfort view: the strength of the warm, low-blue-light filter over the whole window
     /// (0 off, 1 to 3 gentle to strong).
     pub comfort_level: u8,
+    /// Dark pages: whether page rasters are drawn with their lightness inverted (white paper
+    /// black, black text white). On by default; the rail's moon button switches it.
+    pub dark_pages_on: bool,
     /// Files delivered asynchronously (web drag-and-drop, web file picker).
     pub inbox: Inbox,
     /// The browser's startup `?file=` download. Unlike a deliberate Open or drop, a late
@@ -960,6 +963,7 @@ impl PdfCraftApp {
             full_screen: false,
             pre_full_screen: Vec::new(),
             comfort_level: 0,
+            dark_pages_on: true,
             inbox: Default::default(),
             startup_inbox: Default::default(),
             startup_superseded: false,
@@ -1606,10 +1610,17 @@ impl PdfCraftApp {
         self.reading_colors
     }
 
-    /// With the dark theme on, and no Reading colours chosen, pages are drawn dark. Switching
-    /// re-renders every open document; the rasters themselves are never changed.
+    /// Switch dark pages on or off (the rail's moon button).
+    pub fn toggle_dark_pages(&mut self) {
+        self.dark_pages_on = !self.dark_pages_on;
+        let text = if self.dark_pages_on { tl!("Dark pages: on") } else { tl!("Dark pages: off") };
+        self.notify(text.to_string());
+    }
+
+    /// Pages are drawn dark while the switch is on. Changing it re-renders every open
+    /// document; the rasters themselves are never changed.
     fn sync_dark_pages(&mut self) {
-        let want = self.theme == ThemeKind::Dark && self.reading_colors.params.is_none();
+        let want = self.dark_pages_on;
         if canvas::dark_pages() != want {
             canvas::set_dark_pages(want);
             for view in &mut self.views {
@@ -2334,6 +2345,7 @@ impl PdfCraftApp {
         // Set apart: one more key inside the macro above passes serde_json's recursion limit.
         v["redact_prefs"] = self.redact_defaults.to_json();
         v["comfort_level"] = serde_json::Value::from(self.comfort_level);
+        v["dark_pages"] = serde_json::Value::Bool(self.dark_pages_on);
         // Set outside json! above, which is at serde_json's macro recursion limit.
         v["hide_empty_highlight_hover"] = serde_json::Value::Bool(self.comment_prefs.hide_empty_highlight_hover);
         v.to_string()
@@ -2377,6 +2389,9 @@ impl PdfCraftApp {
         self.pinned.restore(&v["pinned_folders"]);
         if let Ok(preference) = serde_json::from_value::<ThemePreference>(v["theme"].clone()) {
             self.set_theme_preference(preference);
+        }
+        if let Some(on) = v["dark_pages"].as_bool() {
+            self.dark_pages_on = on;
         }
         if let Some(level) = v["comfort_level"].as_u64() {
             self.comfort_level = level.min(3) as u8;
