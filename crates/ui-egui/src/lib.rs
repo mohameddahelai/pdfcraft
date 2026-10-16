@@ -1576,7 +1576,13 @@ impl PdfCraftApp {
     /// Enter or leave full-screen reading (Acrobat: View ▸ Full Screen Mode, ⌘L).
     pub fn set_full_screen(&mut self, ctx: &egui::Context, on: bool) {
         self.full_screen = on;
-        // Like holding the paper: one whole page at a time, filling the screen with no borders.
+        self.apply_paper_layout(on);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
+    }
+
+    /// Like holding the paper: one whole page at a time, covering the screen with no borders.
+    /// Leaving puts every document's layout back.
+    pub(crate) fn apply_paper_layout(&mut self, on: bool) {
         canvas::set_borderless(on);
         if on {
             self.pre_full_screen.clear();
@@ -1593,7 +1599,6 @@ impl PdfCraftApp {
                 }
             }
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
     }
 
     /// Step the comfort view: off, then gentle, medium and strong warm filters.
@@ -2543,6 +2548,14 @@ impl PdfCraftApp {
                 };
                 self.set_theme_preference(preference);
             }
+            // Paper view, dark pages and the warm filter, for headless screenshots and scripts.
+            ("full_screen", _) => {
+                let on = value != "off";
+                self.full_screen = on;
+                self.apply_paper_layout(on);
+            }
+            ("dark_pages", _) => self.dark_pages_on = value != "off",
+            ("comfort", _) => self.comfort_level = value.parse::<u8>().map_err(|_| "comfort must be 0 to 3")?.min(3),
             ("scroll_speed", _) => {
                 self.scroll_speed = scroll_speed::ScrollSpeed::parse(value).ok_or("scroll_speed must be slow, normal, or fast")?;
             }
