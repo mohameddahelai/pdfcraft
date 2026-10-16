@@ -3,6 +3,9 @@ name: Build Windows exe
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -43,3 +46,36 @@ jobs:
         with:
           name: pdfcraft-windows-x64
           path: dist/
+
+      # Pictures of the real app (software rendering), so the new features can be checked
+      # without a screen. A failure here never affects the exe above.
+      - name: Screenshots of the app
+        continue-on-error: true
+        shell: pwsh
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: |
+          New-Item -ItemType Directory -Force shots | Out-Null
+          $pdf = "crates/ui-egui/tests/data/form.pdf"
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/1-window-dark.png $pdf --size 1440x900 --scale 1 --mode read
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/2-window-light-pages.png $pdf --size 1440x900 --scale 1 --mode read --dark_pages off
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/3-paper-portrait.png $pdf --size 1080x1920 --scale 1 --full_screen on
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/4-short-window.png $pdf --size 1280x700 --scale 1 --mode read
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/5-paper-landscape.png $pdf --size 1600x900 --scale 1 --full_screen on
+
+      - name: Publish screenshots to a branch
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          if (-not (Test-Path shots)) { exit 0 }
+          Copy-Item shots "$env:RUNNER_TEMP/shots" -Recurse -Force
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git checkout --orphan ui-shots
+          git rm -rf . | Out-Null
+          Copy-Item "$env:RUNNER_TEMP/shots" shots -Recurse -Force
+          git add shots
+          git commit -m "UI screenshots from run ${{ github.run_number }}"
+          git push -f origin ui-shots
