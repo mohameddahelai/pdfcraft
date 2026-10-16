@@ -665,6 +665,7 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
             // Page navigation cluster at the bottom (as in Acrobat's rail).
             let view = &mut app.views[index];
             let mut page_display = None;
+            let mut hold_as_paper = false;
             ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 let tip = crate::commands::key_tip(ui.ctx(), tl!("Zoom out ({key})"), crate::commands::ZOOM_OUT);
@@ -693,6 +694,10 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                 if icons::button(ui, fit_icon, 32.0, false, tl!("Toggle fit page / fit width")).clicked() {
                     view.fit = if view.fit == Fit::Width { Fit::Page } else { Fit::Width };
                     view.goto = Some((view.current, 0.0));
+                }
+                // One whole page at a time, filling the screen, nothing else (Esc to leave).
+                if icons::button(ui, "file-text", 32.0, false, tl!("Hold as a paper")).clicked() {
+                    hold_as_paper = true;
                 }
                 let zoom = format!("{:.0}%", view.zoom * 100.0);
                 ui.allocate_ui_with_layout(vec2(40.0, 16.0), Layout::top_down(Align::Center), |ui| {
@@ -751,6 +756,9 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     view.page_input = view.current_page_label(labels.get(view.current).map(String::as_str));
                 }
             });
+            if hold_as_paper {
+                app.execute("view.full_screen");
+            }
             if let Some(id) = page_display {
                 // The comfort filter is a display setting of the app, not a catalogue command.
                 if id == "view.comfort" {
@@ -813,7 +821,7 @@ fn rail_view_menu(ui: &mut egui::Ui, view: &mut DocView) -> Option<&'static str>
     ui.separator();
     picked = page_display_menu(ui, view).or(picked);
     ui.separator();
-    for (id, label) in [("view.read_mode", "Read mode"), ("view.full_screen", "Full screen mode"), ("view.comfort", "Comfort view (warm light)")] {
+    for (id, label) in [("view.read_mode", "Read mode"), ("view.full_screen", "Hold as a paper (full screen)"), ("view.comfort", "Comfort view (warm light)")] {
         if ui.button(tl!(label)).clicked() {
             picked = Some(id);
         }

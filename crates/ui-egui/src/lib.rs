@@ -1600,13 +1600,21 @@ impl PdfCraftApp {
         }
     }
 
-    /// The colours pages are read in: the Reading colours preference when it is on, otherwise
-    /// white text on black while the dark theme is on.
+    /// The colours pages are read in: the Reading colours preference. (The dark theme darkens
+    /// pages another way, on the rendered pixels; see `sync_dark_pages`.)
     fn effective_reading_colors(&self) -> pdfcraft_render::ReadingColors {
-        if self.reading_colors.params.is_none() && self.theme == ThemeKind::Dark {
-            pdfcraft_render::ReadingColors::WHITE_ON_BLACK
-        } else {
-            self.reading_colors
+        self.reading_colors
+    }
+
+    /// With the dark theme on, and no Reading colours chosen, pages are drawn dark. Switching
+    /// re-renders every open document; the rasters themselves are never changed.
+    fn sync_dark_pages(&mut self) {
+        let want = self.theme == ThemeKind::Dark && self.reading_colors.params.is_none();
+        if canvas::dark_pages() != want {
+            canvas::set_dark_pages(want);
+            for view in &mut self.views {
+                view.invalidate_content();
+            }
         }
     }
 
@@ -2101,8 +2109,6 @@ impl PdfCraftApp {
         if kind != self.theme {
             self.theme = kind;
             theme::apply(ctx, kind);
-            // The dark theme also turns the pages white-on-black.
-            self.apply_reading_colors();
         }
     }
 
@@ -2997,9 +3003,9 @@ impl eframe::App for PdfCraftApp {
             }
         }
         self.sync_theme(ctx);
-        // Pages follow the theme: every frame, so no way of changing the theme or opening a
-        // document can leave a page in the wrong colours.
-        self.apply_reading_colors();
+        // Pages follow the theme: checked every frame, so no way of changing the theme or
+        // the Reading colours can leave a page in the wrong colours.
+        self.sync_dark_pages();
         let native = ctx.native_pixels_per_point().unwrap_or(1.0);
         ui_scale::sync(ctx, ui_scale::zoom(self.ui_scale, self.system_text_scale, native), &mut self.ui_scale_applied);
         // Remember user work even if its tab is subsequently closed or Home is selected.
@@ -3152,7 +3158,9 @@ impl eframe::App for PdfCraftApp {
         if self.full_screen && self.active.is_some() {
             // Full screen: the page, nothing else (Esc or ⌘L to leave).
             let t = theme::Tokens::get(&ctx);
-            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(if t.dark() { t.pasteboard } else { egui::Color32::from_gray(32) })).show(
+            // The colour of the paper, so a page that doesn't fill the screen leaves no dark hole.
+            let _ = &t;
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(canvas::paper_color())).show(
                 ui,
                 |ui| {
                     if let Some(i) = self.active {

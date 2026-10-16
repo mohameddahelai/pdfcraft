@@ -44,6 +44,39 @@ fn margin() -> f32 {
 fn side() -> f32 {
     if borderless() { 0.0 } else { SIDE }
 }
+
+/// Dark pages: every page raster has its lightness inverted as it becomes a texture (white
+/// paper turns black, black text white), whatever the PDF holds, images included.
+static DARK_PAGES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn set_dark_pages(on: bool) {
+    DARK_PAGES.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn dark_pages() -> bool {
+    DARK_PAGES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The colour of the paper, for the area around a page that doesn't fill the screen.
+pub(crate) fn paper_color() -> Color32 {
+    if dark_pages() { Color32::BLACK } else { Color32::WHITE }
+}
+
+/// Invert the lightness of an opaque page raster, keeping each pixel's hue and chroma: with the
+/// sum of a pixel's largest and smallest channel as `s`, every channel moves by `255 - s`, so
+/// black and white swap and a colour keeps its colour. Translucent pixels are left alone.
+fn dark_page(mut img: egui::ColorImage) -> egui::ColorImage {
+    for c in img.pixels.iter_mut() {
+        if c.a() != 255 {
+            continue;
+        }
+        let (r, g, b) = (i16::from(c.r()), i16::from(c.g()), i16::from(c.b()));
+        let shift = 255 - (r.max(g).max(b) + r.min(g).min(b));
+        let map = |v: i16| (v + shift).clamp(0, 255) as u8;
+        *c = Color32::from_rgba_premultiplied(map(r), map(g), map(b), 255);
+    }
+    img
+}
 const THUMB_TAG: u64 = 1 << 63;
 const TEXT_TAG: u64 = 1 << 62;
 /// A page rendered for the organize grid at the size it is drawn there.
@@ -1827,6 +1860,8 @@ impl DocView {
         }
         // The length was checked above, so the renderer's buffer becomes the texture data as is.
         let img = texture_image([r.width as usize, r.height as usize], r.rgba);
+        // Print previews stay true to the paper; every other raster follows the dark setting.
+        let img = if dark_pages() && r.request.tag & PRINT_TAG == 0 { dark_page(img) } else { img };
         if let Some(t) = r.request.tile {
             let key = (page, r.request.tag, t.x, t.y);
             let tex = ctx.load_texture(format!("tile-{:?}-{page}-{}-{}", self.id, t.x, t.y), img, TextureOptions::LINEAR);
