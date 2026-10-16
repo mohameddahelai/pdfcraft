@@ -910,8 +910,8 @@ impl PdfCraftApp {
             quick_tool: QuickTool::Select,
             space_hand: None,
             comment_prefs: Default::default(),
-            theme: ThemeKind::Light,
-            theme_preference: ThemePreference::Light,
+            theme: ThemeKind::Dark,
+            theme_preference: ThemePreference::Dark,
             reading_colors: Default::default(),
             #[cfg(target_os = "linux")]
             desktop_theme: None,
@@ -1572,14 +1572,14 @@ impl PdfCraftApp {
     /// Enter or leave full-screen reading (Acrobat: View ▸ Full Screen Mode, ⌘L).
     pub fn set_full_screen(&mut self, ctx: &egui::Context, on: bool) {
         self.full_screen = on;
-        // Like holding the paper: pages run edge to edge, one page across, scrolling down.
+        // Like holding the paper: one whole page at a time, filling the screen with no borders.
         canvas::set_borderless(on);
         if on {
             self.pre_full_screen.clear();
             for view in &mut self.views {
                 self.pre_full_screen.push((view.id, view.fit, view.layout, view.continuous));
-                view.set_display(canvas::PageLayout::Single, true);
-                view.set_fit(canvas::Fit::Width);
+                view.set_display(canvas::PageLayout::Single, false);
+                view.set_fit(canvas::Fit::Page);
             }
         } else {
             for (id, fit, layout, continuous) in std::mem::take(&mut self.pre_full_screen) {
@@ -2997,6 +2997,9 @@ impl eframe::App for PdfCraftApp {
             }
         }
         self.sync_theme(ctx);
+        // Pages follow the theme: every frame, so no way of changing the theme or opening a
+        // document can leave a page in the wrong colours.
+        self.apply_reading_colors();
         let native = ctx.native_pixels_per_point().unwrap_or(1.0);
         ui_scale::sync(ctx, ui_scale::zoom(self.ui_scale, self.system_text_scale, native), &mut self.ui_scale_applied);
         // Remember user work even if its tab is subsequently closed or Home is selected.
