@@ -523,10 +523,25 @@ pub fn mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                         if icons::button(ui, "info", 32.0, false, &tip).clicked() {
                             app.dialog = Some(Dialog::Properties(PropsTab::Description));
                         }
-                        // One whole page at a time, covering the screen, nothing else (Esc leaves).
-                        if icons::button(ui, "file-text", 32.0, false, tl!("Hold as a paper")).clicked() {
+                        // One page at a time, covering the screen, nothing else (Esc leaves). A click
+                        // starts it at once; a right-click chooses how the page is sized.
+                        let paper = icons::button(ui, "file-text", 32.0, false, tl!("Hold as a paper (right-click: landscape / portrait options)"));
+                        if paper.clicked() {
                             app.execute("view.full_screen");
                         }
+                        paper.context_menu(|ui| {
+                            for (mode, label) in [
+                                (crate::canvas::PaperMode::Cover, "Fill the screen (automatic)"),
+                                (crate::canvas::PaperMode::Width, "Landscape screen: fill the width"),
+                                (crate::canvas::PaperMode::Height, "Portrait screen: fill the height"),
+                                (crate::canvas::PaperMode::Whole, "Show the whole page"),
+                            ] {
+                                if ui.button(tl!(label)).clicked() {
+                                    app.hold_as_paper(mode);
+                                    ui.close();
+                                }
+                            }
+                        });
                     });
                     // Dark pages: white paper turns black, black text white (lit while on).
                     let dark_on = app.dark_pages_on;

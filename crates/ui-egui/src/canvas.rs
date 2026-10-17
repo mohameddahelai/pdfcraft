@@ -33,6 +33,57 @@ fn borderless() -> bool {
     BORDERLESS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// How "Hold as a paper" sizes the page on the screen. All of them show one page at a time, with
+/// the wheel (or a drag) moving around inside a page that is larger than the screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaperMode {
+    /// The page covers the whole screen, with no bars: the width on a wide screen, the height on
+    /// a tall one. Whatever spills off the edge is reached by moving the page.
+    Cover,
+    /// The page fills the width of the screen (the best choice for a landscape screen).
+    Width,
+    /// The page fills the height of the screen (the best choice for a portrait screen).
+    Height,
+    /// The whole page is visible, centred; the screen's other direction shows bars.
+    Whole,
+}
+
+impl PaperMode {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "cover" | "fill" | "auto" => Some(Self::Cover),
+            "width" => Some(Self::Width),
+            "height" => Some(Self::Height),
+            "whole" | "page" => Some(Self::Whole),
+            _ => None,
+        }
+    }
+
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::Cover => "cover",
+            Self::Width => "width",
+            Self::Height => "height",
+            Self::Whole => "whole",
+        }
+    }
+}
+
+static PAPER_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+pub(crate) fn set_paper_mode(mode: PaperMode) {
+    PAPER_MODE.store(mode as u8, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn paper_mode() -> PaperMode {
+    match PAPER_MODE.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => PaperMode::Width,
+        2 => PaperMode::Height,
+        3 => PaperMode::Whole,
+        _ => PaperMode::Cover,
+    }
+}
+
 fn gap() -> f32 {
     if borderless() { 0.0 } else { GAP }
 }
@@ -521,6 +572,8 @@ pub struct DocView {
     viewport_screen: Rect,
     /// Pending zoom anchor: page, fractional position (also in gutters), and viewport offset.
     zoom_anchor: Option<(usize, f32, f32, Vec2)>,
+    /// The page size and window size the paper view last centred a wide page for.
+    paper_sig: Option<(u32, u32, u32, u8)>,
     /// The page view has been shown, so its scroll offset in egui's memory is this document's.
     shown: bool,
     /// Turns wheel input into page turns in single-page view.
@@ -794,6 +847,7 @@ impl DocView {
             screen_xforms: Vec::new(),
             viewport_screen: Rect::NOTHING,
             zoom_anchor: None,
+            paper_sig: None,
             shown: false,
             wheel: Default::default(),
             precise_scroll_until: 0.0,
@@ -1952,12 +2006,33 @@ impl DocView {
             Fit::Page => {
                 let zw = (avail_w - gap() * (per_row - 1.0)) / (w * PT * per_row);
                 let zh = (self.viewport_h - 2.0 * margin()) / (h * PT);
-                self.zoom = zw.min(zh);
+                self.zoom = if borderless() {
+                    match paper_mode() {
+                        PaperMode::Cover => zw.max(zh),
+                        PaperMode::Width => zw,
+                        PaperMode::Height => zh,
+                        PaperMode::Whole => zw.min(zh),
+                    }
+                } else {
+                    zw.min(zh)
+                };
             }
             Fit::Height => self.zoom = (self.viewport_h - 2.0 * margin()) / (h * PT),
             Fit::None => {}
         }
         self.zoom = self.zoom.clamp(0.08, 64.0);
+        // Held as a paper, a page wider than the screen starts centred, with its top at the top
+        // of the screen. Done whenever the size of the page on the screen changes (a new mode, a
+        // new window size), never while the person is moving around.
+        if borderless() && self.fit == Fit::Page {
+            let sig = (self.zoom.to_bits(), self.viewport_w.to_bits(), self.viewport_h.to_bits(), paper_mode() as u8);
+            if self.paper_sig != Some(sig) {
+                self.paper_sig = Some(sig);
+                self.zoom_anchor = Some((self.current, 0.5, 0.0, vec2(self.viewport_w / 2.0, 0.0)));
+            }
+        } else {
+            self.paper_sig = None;
+        }
     }
 
     /// Width of the scroll content. Single-page view sizes it to the page it shows, so a

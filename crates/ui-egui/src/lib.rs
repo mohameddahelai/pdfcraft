@@ -1593,13 +1593,33 @@ impl PdfCraftApp {
                 view.set_display(canvas::PageLayout::Single, false);
                 view.set_fit(canvas::Fit::Page);
             }
+            // A drag moves the page, like sliding paper around.
+            self.quick_tool = QuickTool::Hand;
+            self.notify(tl!("Hold as a paper: wheel or drag to move · W width · H height · A fill the screen · P whole page · Esc to leave").to_string());
         } else {
+            self.quick_tool = QuickTool::Select;
             for (id, fit, layout, continuous) in std::mem::take(&mut self.pre_full_screen) {
                 if let Some(view) = self.views.iter_mut().find(|v| v.id == id) {
                     view.set_display(layout, continuous);
                     view.set_fit(fit);
                 }
             }
+        }
+    }
+
+    /// Choose how the page is sized in "Hold as a paper" (the next time it is on, or right now).
+    pub fn set_paper_mode(&mut self, mode: canvas::PaperMode) {
+        canvas::set_paper_mode(mode);
+        if let Some(ctx) = &self.ctx {
+            ctx.request_repaint();
+        }
+    }
+
+    /// Start "Hold as a paper" in `mode`, or switch to it if it is already on.
+    pub fn hold_as_paper(&mut self, mode: canvas::PaperMode) {
+        self.set_paper_mode(mode);
+        if !self.full_screen {
+            self.execute("view.full_screen");
         }
     }
 
@@ -2353,6 +2373,7 @@ impl PdfCraftApp {
         v["redact_prefs"] = self.redact_defaults.to_json();
         v["comfort_level"] = serde_json::Value::from(self.comfort_level);
         v["dark_pages"] = serde_json::Value::Bool(self.dark_pages_on);
+        v["paper_mode"] = serde_json::Value::String(canvas::paper_mode().token().to_string());
         // Set outside json! above, which is at serde_json's macro recursion limit.
         v["hide_empty_highlight_hover"] = serde_json::Value::Bool(self.comment_prefs.hide_empty_highlight_hover);
         v.to_string()
@@ -2399,6 +2420,9 @@ impl PdfCraftApp {
         }
         if let Some(on) = v["dark_pages"].as_bool() {
             self.dark_pages_on = on;
+        }
+        if let Some(mode) = v["paper_mode"].as_str().and_then(canvas::PaperMode::parse) {
+            canvas::set_paper_mode(mode);
         }
         if let Some(level) = v["comfort_level"].as_u64() {
             self.comfort_level = level.min(3) as u8;
@@ -2551,6 +2575,10 @@ impl PdfCraftApp {
                 self.set_theme_preference(preference);
             }
             // Paper view, dark pages and the warm filter, for headless screenshots and scripts.
+            ("paper_mode", _) => {
+                let mode = canvas::PaperMode::parse(value).ok_or("paper_mode must be cover, width, height or whole")?;
+                canvas::set_paper_mode(mode);
+            }
             ("full_screen", _) => {
                 let on = value != "off";
                 self.full_screen = on;
@@ -3188,6 +3216,25 @@ impl eframe::App for PdfCraftApp {
         if self.full_screen && self.active.is_some() {
             // Full screen: the page, nothing else (Esc or ⌘L to leave).
             let t = theme::Tokens::get(&ctx);
+            // W, H, A and P switch how the page is sized, with no menu to open.
+            let pick = ctx.input(|i| {
+                if i.modifiers.any() {
+                    None
+                } else if i.key_pressed(Key::W) {
+                    Some(canvas::PaperMode::Width)
+                } else if i.key_pressed(Key::H) {
+                    Some(canvas::PaperMode::Height)
+                } else if i.key_pressed(Key::A) {
+                    Some(canvas::PaperMode::Cover)
+                } else if i.key_pressed(Key::P) {
+                    Some(canvas::PaperMode::Whole)
+                } else {
+                    None
+                }
+            });
+            if let Some(mode) = pick {
+                self.set_paper_mode(mode);
+            }
             // Behind the page, the plain surface a sheet lies on: nothing is painted to pretend
             // the page is bigger than it is.
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(if t.dark() { t.pasteboard } else { egui::Color32::from_gray(32) })).show(
