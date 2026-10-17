@@ -1590,12 +1590,18 @@ impl PdfCraftApp {
             self.pre_full_screen.clear();
             for view in &mut self.views {
                 self.pre_full_screen.push((view.id, view.fit, view.layout, view.continuous));
-                view.set_display(canvas::PageLayout::Single, false);
+                // One page at a time, unless the person has Continuous scrolling on: then the
+                // pages follow one another, and the next page shows below the current one.
+                let continuous = view.continuous;
+                view.set_display(canvas::PageLayout::Single, continuous);
                 view.set_fit(canvas::Fit::Page);
             }
             // A drag moves the page, like sliding paper around.
             self.quick_tool = QuickTool::Hand;
-            self.notify(tl!("Hold as a paper: wheel or drag to move · W width · H height · A fill the screen · P whole page · Esc to leave").to_string());
+            self.notify(
+                tl!("Hold as a paper: wheel or drag to move · W width · H height · A fill the screen · P whole page · C continuous scrolling · Esc to leave")
+                    .to_string(),
+            );
         } else {
             self.quick_tool = QuickTool::Select;
             for (id, fit, layout, continuous) in std::mem::take(&mut self.pre_full_screen) {
@@ -3234,6 +3240,13 @@ impl eframe::App for PdfCraftApp {
             });
             if let Some(mode) = pick {
                 self.set_paper_mode(mode);
+            }
+            // C turns Continuous scrolling on or off while holding the page.
+            if ctx.input(|i| !i.modifiers.any() && i.key_pressed(egui::Key::C))
+                && let Some(view) = self.active.and_then(|i| self.views.get_mut(i))
+            {
+                let on = view.continuous();
+                view.set_continuous(!on);
             }
             // Behind the page, the plain surface a sheet lies on: nothing is painted to pretend
             // the page is bigger than it is.

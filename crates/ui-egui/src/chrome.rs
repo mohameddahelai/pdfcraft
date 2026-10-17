@@ -541,6 +541,21 @@ pub fn mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                                     ui.close();
                                 }
                             }
+                            // The same Continuous scrolling switch as in the page display menu: on,
+                            // the next page follows the current one; off, one page at a time.
+                            ui.separator();
+                            let continuous = app.active.and_then(|i| app.views.get(i)).is_some_and(|v| v.continuous());
+                            let label = if continuous {
+                                tl!("Continuous scrolling: on (click to turn off)")
+                            } else {
+                                tl!("Continuous scrolling: off (click to turn on)")
+                            };
+                            if ui.button(label).clicked() {
+                                if let Some(view) = app.active.and_then(|i| app.views.get_mut(i)) {
+                                    view.set_continuous(!continuous);
+                                }
+                                ui.close();
+                            }
                         });
                     });
                     // Dark pages: white paper turns black, black text white (lit while on).
