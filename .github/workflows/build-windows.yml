@@ -88,6 +88,8 @@ jobs:
           cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/7-landscape-cover.png $pdf --size 1600x900 --scale 1 --dark_pages off --paper_mode cover --full_screen on
           cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/8-landscape-whole.png $pdf --size 1600x900 --scale 1 --dark_pages off --paper_mode whole --full_screen on
           cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/9-landscape-page2-width.png $pdf --size 1600x900 --scale 1 --dark_pages off --paper_mode width --page 2 --full_screen on
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/10-portrait-whole-continuous.png $pdf --size 1080x1920 --scale 1 --dark_pages off --layout continuous --paper_mode whole --full_screen on
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/11-landscape-cover-continuous.png $pdf --size 1600x900 --scale 1 --dark_pages off --layout continuous --paper_mode width --page 1 --full_screen on
 
       - name: Publish screenshots to a branch
         if: always()
