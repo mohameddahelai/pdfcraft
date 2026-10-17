@@ -3220,13 +3220,13 @@ impl eframe::App for PdfCraftApp {
             let pick = ctx.input(|i| {
                 if i.modifiers.any() {
                     None
-                } else if i.key_pressed(Key::W) {
+                } else if i.key_pressed(egui::Key::W) {
                     Some(canvas::PaperMode::Width)
-                } else if i.key_pressed(Key::H) {
+                } else if i.key_pressed(egui::Key::H) {
                     Some(canvas::PaperMode::Height)
-                } else if i.key_pressed(Key::A) {
+                } else if i.key_pressed(egui::Key::A) {
                     Some(canvas::PaperMode::Cover)
-                } else if i.key_pressed(Key::P) {
+                } else if i.key_pressed(egui::Key::P) {
                     Some(canvas::PaperMode::Whole)
                 } else {
                     None
