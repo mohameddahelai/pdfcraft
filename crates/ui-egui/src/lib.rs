@@ -609,8 +609,6 @@ pub struct PdfCraftApp {
     /// Dark pages: whether page rasters are drawn with their lightness inverted (white paper
     /// black, black text white). On by default; the rail's moon button switches it.
     pub dark_pages_on: bool,
-    /// When (egui time) to fit the page's content after entering full screen, if still waiting.
-    paper_fit_at: Option<f64>,
     /// Files delivered asynchronously (web drag-and-drop, web file picker).
     pub inbox: Inbox,
     /// The browser's startup `?file=` download. Unlike a deliberate Open or drop, a late
@@ -966,7 +964,6 @@ impl PdfCraftApp {
             pre_full_screen: Vec::new(),
             comfort_level: 0,
             dark_pages_on: true,
-            paper_fit_at: None,
             inbox: Default::default(),
             startup_inbox: Default::default(),
             startup_superseded: false,
@@ -1583,50 +1580,26 @@ impl PdfCraftApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
     }
 
-    /// Like holding the paper: one whole page at a time, covering the screen with no borders.
-    /// Leaving puts every document's layout back.
+    /// Like holding a sheet of paper: one whole page at a time, as large as the screen allows
+    /// with nothing cut off (the window's width on a tall screen, its height on a wide one), in
+    /// the middle of the screen. Continuous scrolling stays off unless the person turns it on;
+    /// leaving puts every document's layout back as it was.
     pub(crate) fn apply_paper_layout(&mut self, on: bool) {
         canvas::set_borderless(on);
         if on {
             self.pre_full_screen.clear();
             for view in &mut self.views {
                 self.pre_full_screen.push((view.id, view.fit, view.layout, view.continuous));
-                // Pages follow one another with no gap, and the wheel, the arrow keys and a drag
-                // all move the view smoothly. Fit width is the first guess; Fit Visible refines it
-                // once the window has taken its full-screen size.
-                view.set_display(canvas::PageLayout::Single, true);
-                view.set_fit(canvas::Fit::Width);
+                view.set_display(canvas::PageLayout::Single, false);
+                view.set_fit(canvas::Fit::Page);
             }
-            self.quick_tool = QuickTool::Hand;
-            let now = self.ctx.as_ref().map_or(0.0, |ctx| ctx.input(|i| i.time));
-            self.paper_fit_at = Some(now + 0.6);
         } else {
-            self.paper_fit_at = None;
-            self.quick_tool = QuickTool::Select;
             for (id, fit, layout, continuous) in std::mem::take(&mut self.pre_full_screen) {
                 if let Some(view) = self.views.iter_mut().find(|v| v.id == id) {
                     view.set_display(layout, continuous);
                     view.set_fit(fit);
                 }
             }
-        }
-    }
-
-    /// Once the window has settled at its full-screen size, zoom the active page to its content,
-    /// as View ▸ Zoom ▸ Fit Visible does, so nothing is cut off and the text nearly fills the width.
-    fn paper_fit_when_ready(&mut self, ctx: &egui::Context) {
-        let Some(at) = self.paper_fit_at else { return };
-        if ctx.input(|i| i.time) < at {
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
-            return;
-        }
-        self.paper_fit_at = None;
-        if let Some(i) = self.active
-            && self.fit_visible(i).is_ok()
-            && let Some(view) = self.views.get_mut(i)
-        {
-            // The zoom already places the content; a pending jump to the page top would undo it.
-            view.goto = None;
         }
     }
 
@@ -3215,10 +3188,9 @@ impl eframe::App for PdfCraftApp {
         if self.full_screen && self.active.is_some() {
             // Full screen: the page, nothing else (Esc or ⌘L to leave).
             let t = theme::Tokens::get(&ctx);
-            // The colour of the paper, so a page that doesn't fill the screen leaves no dark hole.
-            let _ = &t;
-            self.paper_fit_when_ready(&ctx);
-            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(canvas::paper_color())).show(
+            // Behind the page, the plain surface a sheet lies on: nothing is painted to pretend
+            // the page is bigger than it is.
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(if t.dark() { t.pasteboard } else { egui::Color32::from_gray(32) })).show(
                 ui,
                 |ui| {
                     if let Some(i) = self.active {

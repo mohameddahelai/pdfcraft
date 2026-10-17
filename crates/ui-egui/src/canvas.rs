@@ -57,7 +57,8 @@ pub(crate) fn dark_pages() -> bool {
     DARK_PAGES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// The colour of the paper, for the area around a page that doesn't fill the screen.
+/// The colour of the paper (white, or black while pages are dark).
+#[allow(dead_code)]
 pub(crate) fn paper_color() -> Color32 {
     if dark_pages() { Color32::BLACK } else { Color32::WHITE }
 }
@@ -2584,7 +2585,12 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     } else {
         // Only the current row scrolls into view; the content is its bounding box plus margins.
         match row.iter().filter_map(|&i| rects.get(i)).copied().reduce(Rect::union) {
-            Some(r) => (r.top() - margin(), r.height() + 2.0 * margin()),
+            Some(r) => {
+                // Held as a paper, a page shorter than the window sits in the middle of it, the
+                // way a sheet lies on a desk, instead of hanging from the top.
+                let centre = if borderless() { ((view.viewport_h - r.height()) / 2.0).max(0.0) } else { 0.0 };
+                (r.top() - margin() - centre, r.height() + 2.0 * margin() + 2.0 * centre)
+            }
             None => (0.0, 0.0),
         }
     };
