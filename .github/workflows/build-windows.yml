@@ -81,12 +81,13 @@ jobs:
           [IO.File]::WriteAllText("$PWD/shots/sample.pdf", $sb.ToString(), [Text.Encoding]::ASCII)
           $pdf = "shots/sample.pdf"
           cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/1-window-dark.png $pdf --size 1440x900 --scale 1 --mode read
-          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/2-window-light-pages.png $pdf --size 1440x900 --scale 1 --mode read --dark_pages off
-          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/3-paper-portrait.png $pdf --size 1080x1920 --scale 1 --full_screen on --dark_pages off
           cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/4-short-window.png $pdf --size 1280x600 --scale 1 --mode read
-          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/5-paper-landscape.png $pdf --size 1600x900 --scale 1 --full_screen on
-          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/6-paper-landscape-page2.png $pdf --size 1600x900 --scale 1 --page 2 --full_screen on --dark_pages off
-          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/7-paper-portrait-page2.png $pdf --size 1080x1920 --scale 1 --page 2 --full_screen on --dark_pages off
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/3-portrait-cover.png $pdf --size 1080x1920 --scale 1 --dark_pages off --paper_mode cover --full_screen on
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/5-portrait-whole.png $pdf --size 1080x1920 --scale 1 --dark_pages off --paper_mode whole --full_screen on
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/6-portrait-height.png $pdf --size 1080x1920 --scale 1 --dark_pages off --paper_mode height --full_screen on
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/7-landscape-cover.png $pdf --size 1600x900 --scale 1 --dark_pages off --paper_mode cover --full_screen on
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/8-landscape-whole.png $pdf --size 1600x900 --scale 1 --dark_pages off --paper_mode whole --full_screen on
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/9-landscape-page2-width.png $pdf --size 1600x900 --scale 1 --dark_pages off --paper_mode width --page 2 --full_screen on
 
       - name: Publish screenshots to a branch
         if: always()
