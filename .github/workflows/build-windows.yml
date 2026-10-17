@@ -60,21 +60,24 @@ jobs:
           # A one-page test PDF whose text runs almost to the left and right edges, like a slide
           # handout, to check that paper view never cuts words off.
           $stream = "BT /F1 20 Tf 8 760 Td (Edge text begins at the very left of the page) Tj ET`nBT /F1 20 Tf 8 640 Td (A second long line that nearly touches the right edge too) Tj ET`nBT /F1 14 Tf 8 520 Td (Small text near the left edge for checking that nothing is cut) Tj ET"
+          $stream2 = "BT /F1 24 Tf 8 740 Td (PAGE TWO of the test document) Tj ET`nBT /F1 14 Tf 8 40 Td (Bottom of page two: the whole page must be visible, top to bottom) Tj ET`n0.5 w 20 20 572 752 re S"
           $bodies = @(
             "<< /Type /Catalog /Pages 2 0 R >>",
-            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
             "<< /Length $($stream.Length) >>`nstream`n$stream`nendstream",
-            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            "<< /Length $($stream2.Length) >>`nstream`n$stream2`nendstream"
           )
           $sb = New-Object System.Text.StringBuilder
           [void]$sb.Append("%PDF-1.4`n")
           $offsets = @()
           for ($i = 0; $i -lt $bodies.Count; $i++) { $offsets += $sb.Length; [void]$sb.Append("$($i + 1) 0 obj`n$($bodies[$i])`nendobj`n") }
           $xref = $sb.Length
-          [void]$sb.Append("xref`n0 6`n0000000000 65535 f `n")
+          [void]$sb.Append("xref`n0 8`n0000000000 65535 f `n")
           foreach ($o in $offsets) { [void]$sb.Append(("{0:D10} 00000 n `n" -f $o)) }
-          [void]$sb.Append("trailer`n<< /Size 6 /Root 1 0 R >>`nstartxref`n$xref`n%%EOF`n")
+          [void]$sb.Append("trailer`n<< /Size 8 /Root 1 0 R >>`nstartxref`n$xref`n%%EOF`n")
           [IO.File]::WriteAllText("$PWD/shots/sample.pdf", $sb.ToString(), [Text.Encoding]::ASCII)
           $pdf = "shots/sample.pdf"
           cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/1-window-dark.png $pdf --size 1440x900 --scale 1 --mode read
@@ -82,6 +85,8 @@ jobs:
           cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/3-paper-portrait.png $pdf --size 1080x1920 --scale 1 --full_screen on --dark_pages off
           cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/4-short-window.png $pdf --size 1280x600 --scale 1 --mode read
           cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/5-paper-landscape.png $pdf --size 1600x900 --scale 1 --full_screen on
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/6-paper-landscape-page2.png $pdf --size 1600x900 --scale 1 --page 2 --full_screen on --dark_pages off
+          cargo run --release --locked -p pdfcraft-ui-egui --example shot -- shots/7-paper-portrait-page2.png $pdf --size 1080x1920 --scale 1 --page 2 --full_screen on --dark_pages off
 
       - name: Publish screenshots to a branch
         if: always()
