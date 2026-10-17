@@ -3250,7 +3250,16 @@ impl eframe::App for PdfCraftApp {
             }
             // Behind the page, the plain surface a sheet lies on: nothing is painted to pretend
             // the page is bigger than it is.
-            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(if t.dark() { t.pasteboard } else { egui::Color32::from_gray(32) })).show(
+            // With dark pages on, the surround is the page's own black, so the page seems to go on
+            // for ever instead of sitting on a grey desk.
+            let surround = if canvas::dark_pages() {
+                egui::Color32::BLACK
+            } else if t.dark() {
+                t.pasteboard
+            } else {
+                egui::Color32::from_gray(32)
+            };
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(surround)).show(
                 ui,
                 |ui| {
                     if let Some(i) = self.active {
