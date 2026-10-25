@@ -2909,7 +2909,9 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
             if !borderless() {
                 painter.add(egui::epaint::Shadow { offset: [0, 3], blur: 14, spread: 0, color: t.page_shadow }.as_shape(r, CornerRadius::ZERO));
             }
-            painter.rect_filled(r, CornerRadius::ZERO, Color32::WHITE);
+            // The sheet under the page image, which shows until that image arrives (turning a
+            // page, zooming): the paper's own colour, so dark pages never flash white meanwhile.
+            painter.rect_filled(r, CornerRadius::ZERO, paper_color());
             if let Some(err) = view.errors.get(&i) {
                 painter.rect_filled(r, CornerRadius::ZERO, Color32::from_rgb(0xFB, 0xF4, 0xF4));
                 icons::paint(
@@ -4987,7 +4989,7 @@ fn organize_grid(view: &mut DocView, info: &DocInfo, editable: bool, dirty: bool
                     ui.painter().rect_stroke(c.shrink(6.0), CornerRadius::same(8), Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
                 }
                 ui.painter().rect_filled(pr.translate(vec2(0.0, 1.5)), CornerRadius::same(1), t.page_shadow);
-                ui.painter().rect_filled(pr, CornerRadius::ZERO, Color32::WHITE);
+                ui.painter().rect_filled(pr, CornerRadius::ZERO, paper_color());
                 // A page drawn larger than its thumbnail gets a render at the size drawn, while
                 // it is in view; until that arrives the thumbnail stands in.
                 let want = size.x * ppp;
