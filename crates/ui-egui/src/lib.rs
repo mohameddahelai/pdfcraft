@@ -1577,7 +1577,19 @@ impl PdfCraftApp {
     pub fn set_full_screen(&mut self, ctx: &egui::Context, on: bool) {
         self.full_screen = on;
         self.apply_paper_layout(on);
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
+        // The paper fills the window it is in. Only a window that already covers the screen goes
+        // on to true full screen: a window snapped to half or a quarter of the screen keeps its
+        // place, so the paper fills just that part.
+        let covers_screen = ctx.input(|i| {
+            let v = i.viewport();
+            v.maximized == Some(true)
+                || v.fullscreen == Some(true)
+                || match (v.monitor_size, v.inner_rect) {
+                    (Some(m), Some(r)) => r.width() >= m.x * 0.9 && r.height() >= m.y * 0.85,
+                    _ => true,
+                }
+        });
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on && covers_screen));
     }
 
     /// Like holding a sheet of paper: one whole page at a time, as large as the screen allows

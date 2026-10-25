@@ -496,15 +496,38 @@ pub fn mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
+                // In a narrow window (half or a quarter of a screen) the bar sheds what it can't
+                // fit instead of drawing parts on top of each other: the search box shrinks to a
+                // button, then the mode tabs fold into one menu.
+                let bar_width = ui.available_width();
+                let search_width = if bar_width >= 960.0 {
+                    Some(260.0)
+                } else if bar_width >= 840.0 {
+                    Some(150.0)
+                } else {
+                    None
+                };
+                let fold_tabs = bar_width < 730.0;
                 main_menu(app, ui);
                 ui.add_space(6.0);
                 ui.painter().vline(ui.cursor().left(), ui.max_rect().y_range().shrink(12.0), Stroke::new(1.0, t.divider));
                 ui.add_space(10.0);
-                for (mode, label) in
-                    [(Mode::AllTools, "All tools"), (Mode::Read, "Read"), (Mode::Edit, "Edit"), (Mode::Convert, "Convert"), (Mode::Sign, "E-Sign")]
-                {
-                    if widgets::mode_tab(ui, tl!(label), app.mode == mode).clicked() {
-                        app.switch_mode(mode, true);
+                let modes = [(Mode::AllTools, "All tools"), (Mode::Read, "Read"), (Mode::Edit, "Edit"), (Mode::Convert, "Convert"), (Mode::Sign, "E-Sign")];
+                if fold_tabs {
+                    let current = modes.iter().find(|(m, _)| *m == app.mode).map_or("Read", |(_, l)| *l);
+                    ui.menu_button(tl!(current), |ui| {
+                        for (mode, label) in modes {
+                            if ui.selectable_label(app.mode == mode, tl!(label)).clicked() {
+                                app.switch_mode(mode, true);
+                                ui.close();
+                            }
+                        }
+                    });
+                } else {
+                    for (mode, label) in modes {
+                        if widgets::mode_tab(ui, tl!(label), app.mode == mode).clicked() {
+                            app.switch_mode(mode, true);
+                        }
                     }
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -569,8 +592,17 @@ pub fn mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                         app.cycle_comfort();
                     }
                     ui.add_space(8.0);
-                    if widgets::search_box(ui, tl!("Find tools and commands"), 260.0).clicked() {
-                        app.palette_open = true;
+                    match search_width {
+                        Some(width) => {
+                            if widgets::search_box(ui, tl!("Find tools and commands"), width).clicked() {
+                                app.palette_open = true;
+                            }
+                        }
+                        None => {
+                            if icons::button(ui, "search", 32.0, false, tl!("Find tools and commands")).clicked() {
+                                app.palette_open = true;
+                            }
+                        }
                     }
                 });
             });
@@ -699,12 +731,12 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
             // left, so icons never pile up on one another.
             let total = ui.available_height();
             let top_full = 9.0 * 38.0;
-            let (compact, tiny, bottom_need) = if total >= top_full + 410.0 {
-                (false, false, 410.0)
-            } else if total >= top_full + 300.0 {
-                (true, false, 300.0)
+            let (compact, tiny, bottom_need) = if total >= top_full + 440.0 {
+                (false, false, 440.0)
+            } else if total >= top_full + 330.0 {
+                (true, false, 330.0)
             } else {
-                (true, true, 222.0)
+                (true, true, 255.0)
             };
             egui::ScrollArea::vertical().id_salt("rail-top").max_height((total - bottom_need).max(0.0)).auto_shrink([false, true]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
@@ -779,8 +811,9 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                             view.view_history(forward);
                         }
                     }
-                    ui.label(egui::RichText::new(page_count.to_string()).font(theme::regular(11.0)).color(t.text_muted));
                 }
+                // The total under the page box, so it reads "3 / 12" whatever the window size.
+                ui.label(egui::RichText::new(format!("/ {page_count}")).font(theme::medium(11.0)).color(t.text_muted));
                 let page_input_id = view.page_input_id();
                 // Consume replacement selection once, including when the editor has lost focus.
                 let reselect = std::mem::take(&mut view.page_input_reselect);
