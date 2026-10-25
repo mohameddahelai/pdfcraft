@@ -118,7 +118,24 @@ pub(crate) fn paper_color() -> Color32 {
 /// sum of a pixel's largest and smallest channel as `s`, every channel moves by `255 - s`, so
 /// black and white swap and a colour keeps its colour. Translucent pixels are left alone.
 fn dark_page(mut img: egui::ColorImage) -> egui::ColorImage {
-    for c in img.pixels.iter_mut() {
+    // A page is millions of pixels: split it across the cores so a turn never stalls a frame.
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get()).min(8);
+    let len = img.pixels.len();
+    if cores < 2 || len < 250_000 {
+        dark_pixels(&mut img.pixels);
+    } else {
+        let chunk = len.div_ceil(cores);
+        std::thread::scope(|s| {
+            for part in img.pixels.chunks_mut(chunk) {
+                s.spawn(|| dark_pixels(part));
+            }
+        });
+    }
+    img
+}
+
+fn dark_pixels(pixels: &mut [Color32]) {
+    for c in pixels.iter_mut() {
         if c.a() != 255 {
             continue;
         }
@@ -127,7 +144,6 @@ fn dark_page(mut img: egui::ColorImage) -> egui::ColorImage {
         let map = |v: i16| (v + shift).clamp(0, 255) as u8;
         *c = Color32::from_rgba_premultiplied(map(r), map(g), map(b), 255);
     }
-    img
 }
 const THUMB_TAG: u64 = 1 << 63;
 const TEXT_TAG: u64 = 1 << 62;
@@ -3760,6 +3776,20 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     let pan_held = now_settle < view.pan_hold_until;
     let (mut wanted, visible_now) = out.inner;
     let cur = view.current;
+    // One page at a time draws only the page in view, so the next turn started from a blank
+    // sheet. Render the pages either side ahead of time (after the visible one, so they never
+    // delay it): turning is then instant. Pages big enough to need tiles are left out.
+    if !view.continuous && let (Some(&lo), Some(&hi)) = (visible_now.iter().min(), visible_now.iter().max()) {
+        let max_side = ui.ctx().input(|inp| inp.max_texture_side) as f32;
+        let neighbours = [hi + 1, lo.wrapping_sub(1), hi + 2, lo.wrapping_sub(2)];
+        for n in neighbours {
+            let Some(p) = info.pages.get(n) else { continue };
+            if view.errors.contains_key(&n) || p.width.max(p.height) * scale > TILE_THRESHOLD.min(max_side) {
+                continue;
+            }
+            wanted.push((n, scale, tag, None));
+        }
+    }
     wanted.sort_by_key(|w| (!visible_now.contains(&w.0), w.0.abs_diff(cur), w.3.is_some()));
     // Tiles of far-away pages are useless: free them. Tiles of an earlier zoom stay for a page
     // that is on screen, whether or not the page is tiled at this zoom (#2196): a zoom out below
