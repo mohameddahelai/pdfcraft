@@ -603,6 +603,8 @@ pub struct PdfCraftApp {
     pub full_screen: bool,
     /// Each document's page display before full screen, put back when full screen ends.
     pre_full_screen: Vec<(DocId, canvas::Fit, canvas::PageLayout, bool)>,
+    /// How much of the screen "Hold as a paper" takes: 0 automatic, 1 this window, 2 whole screen.
+    pub(crate) paper_scope: u8,
     /// Comfort view: the strength of the warm, low-blue-light filter over the whole window
     /// (0 off, 1 to 3 gentle to strong).
     pub comfort_level: u8,
@@ -962,6 +964,7 @@ impl PdfCraftApp {
             unlock_prompt: None,
             full_screen: false,
             pre_full_screen: Vec::new(),
+            paper_scope: 0,
             comfort_level: 0,
             dark_pages_on: true,
             inbox: Default::default(),
@@ -1575,11 +1578,21 @@ impl PdfCraftApp {
 
     /// Enter or leave full-screen reading (Acrobat: View ▸ Full Screen Mode, ⌘L).
     pub fn set_full_screen(&mut self, ctx: &egui::Context, on: bool) {
+        let was = self.full_screen;
         self.full_screen = on;
         self.apply_paper_layout(on);
-        // The paper fills the window it is in. Only a window that already covers the screen goes
-        // on to true full screen: a window snapped to half or a quarter of the screen keeps its
-        // place, so the paper fills just that part.
+        self.apply_paper_window(ctx, on);
+        // No title bar or window buttons while the paper is held (Esc leaves); they come back
+        // exactly as they were. Only a change needs a command.
+        if was != on {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(!on && !self.draws_window_frame()));
+        }
+    }
+
+    /// How much of the screen the held paper takes: automatic (the whole screen only when the
+    /// window already covers it), this window only, or the whole screen. Chosen by hand in the
+    /// paper button's right-click menu (`paper_scope`: 0 automatic, 1 window, 2 screen).
+    pub(crate) fn apply_paper_window(&self, ctx: &egui::Context, on: bool) {
         let covers_screen = ctx.input(|i| {
             let v = i.viewport();
             v.maximized == Some(true)
@@ -1589,7 +1602,12 @@ impl PdfCraftApp {
                     _ => true,
                 }
         });
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on && covers_screen));
+        let whole_screen = match self.paper_scope {
+            1 => false,
+            2 => true,
+            _ => covers_screen,
+        };
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on && whole_screen));
     }
 
     /// Like holding a sheet of paper: one whole page at a time, as large as the screen allows

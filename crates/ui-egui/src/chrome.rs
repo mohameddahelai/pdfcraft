@@ -579,6 +579,20 @@ pub fn mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                                 }
                                 ui.close();
                             }
+                            // How much of the screen the paper takes. Automatic goes to the whole
+                            // screen only when the window already covers it; the other two are the
+                            // manual choice for when automatic guesses wrong. Changes at once.
+                            ui.separator();
+                            for (scope, label) in [(0u8, "Size: automatic"), (1, "Size: only this window (keeps its place)"), (2, "Size: the whole screen")] {
+                                if ui.selectable_label(app.paper_scope == scope, tl!(label)).clicked() {
+                                    app.paper_scope = scope;
+                                    if app.full_screen {
+                                        let ctx = ui.ctx().clone();
+                                        app.apply_paper_window(&ctx, true);
+                                    }
+                                    ui.close();
+                                }
+                            }
                         });
                     });
                     // Dark pages: white paper turns black, black text white (lit while on).
